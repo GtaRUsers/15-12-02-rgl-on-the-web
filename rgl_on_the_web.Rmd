@@ -1,0 +1,499 @@
+---
+title: "Putting rgl on the Web"
+author: "Duncan Murdoch"
+date: "December 2, 2015"
+output: ioslides_presentation
+---
+
+## Contents
+
+1. Introduction
+2. Creating Objects
+3. Some Details
+4. Putting it on the Web
+5. Conclusion
+
+## Introduction
+
+- `rgl` is a package that allows you to create dynamic 3D graphics
+in R.
+```{r echo=FALSE, results='hide'}
+source("setup.R")
+knitr::opts_chunk$set(fig.height=2.5)
+```
+```{r setupearth, echo=FALSE}
+lat <- matrix(seq(90,-90, len=50)*pi/180, 50, 50, byrow=TRUE)
+long <- matrix(seq(-180, 180, len=50)*pi/180, 50, 50)
+r <- 6378.1 # radius of Earth in km
+x <- r*cos(lat)*cos(long); y <- r*cos(lat)*sin(long)
+z <- r*sin(lat)
+cols <- c(rep("chocolate4",4), rep("burlywood1", 4), "darkgoldenrod1")
+rs <- c(6350, 5639, 4928.5, 4207, 3486, 
+                         (3486+2351)/2, 2351, (2351+1216)/2, 1216)
+obj <- c(persp3d(x, y, z, col="white", 
+          texture=system.file("textures/world.png",package="rgl"), 
+          specular="black", axes=FALSE, box=FALSE, 
+          xlab="", ylab="", zlab="",
+          normal_x=x, normal_y=y, normal_z=z),
+         spheres3d(matrix(0, 9, 3), col = cols, radius = rs))
+```
+```{r setupclipping, echo=FALSE}
+root <- currentSubscene3d()
+
+newSubscene3d(model = "inherit", projection = "inherit", 
+	      viewport = "inherit", copyShapes = TRUE, parent = root)
+clipplanes3d(-1,0,0,1)
+
+newSubscene3d(model = "inherit",  projection = "inherit", 
+	      viewport = "inherit", copyShapes = TRUE, parent = root)
+clipplanes3d(0,1,0,0)
+
+newSubscene3d(model = "inherit",  projection = "inherit", 
+	      viewport = "inherit", copyShapes = TRUE, parent = root)
+clipplanes3d(0,0,-1,0)
+
+delFromSubscene3d(obj, subscene = root)
+
+par3d(userMatrix = structure(c(0.972792625427246, -0.0342351011931896, 0.229134112596512, 
+0, 0.225348621606827, 0.369415134191513, -0.901526749134064, 
+0, -0.0537817366421223, 0.928633630275726, 0.367079138755798, 
+0, 0, 0, 0, 1), .Dim = c(4L, 4L)), zoom = 0.6)
+```
+```{r echo=FALSE}
+globe <- scene3d()  # Save for later
+rglwidget()
+```
+
+- I'll be giving a talk tomorrow (Sidney Smith Hall, Room 1087, 3:30 PM) that gives history and 
+background on `rgl`.  Today I want to concentrate on practical
+aspects:  How do you create plots?  How do you put them on the web?
+
+## Following along
+
+- This presentation is written in RMarkdown, and is available at
+http://www.stats.uwo.ca/faculty/murdoch/talks/2015-12-02.
+- `rgl_on_the_web.Rmd` is the source; we are looking at `rgl_on_the_web.html`.  
+- Producing the HTML file requires R, but viewing it doesn't.  
+All the graphics is being done in Javascript by the browser.
+Your phone or tablet can probably display it.
+- I'm using version `r packageVersion("rgl")` of `rgl` and version `r packageVersion("rglwidget")` of `rglwidget`, both
+from R-Forge.  Earlier versions of both packages are on CRAN.
+
+## The mental model
+
+ - In R, base graphics are designed as "drawing in ink on paper".
+ - `grid` graphics (used in `ggplot2` and `lattice`) form a hierarchy
+of viewports and objects within them that can be modified as you go.
+ - `rgl` is more like `grid`, but can be used like base graphics.
+ - In WebGL, the primitive objects are points, line segments and
+ triangles.  WebGL and the graphics hardware handle the work of
+ displaying them in 3D.
+ - `rgl` has a few other types made up of the primitive objects (e.g.
+ surfaces made up of meshes of polygons), or for modifying their
+ appearance (e.g. lights, projections).
+ 
+# Creating objects
+
+## Plotting primitives
+
+- The functions `points3d()`, `lines3d()`, `segments3d()`, `triangles3d()`, `quads3d()` draw primitives, e.g.
+```{r echo=3:4}
+rgl.close()
+set.seed(87)
+x <- rnorm(6); y <- rnorm(6); z <- rnorm(6)
+triangles3d(x, y, z, col = c(2,2,2,3,4,5))
+rglwidget()
+```
+
+- Colours (and other properties) are set per vertex and interpolated
+between.
+
+## Derived objects
+
+- The functions `texts3d()`, `spheres3d()` and `planes3d()` act like primitives:
+```{r echo=2:4}
+rgl.close()
+texts3d(x, y, z, texts=1:6)
+spheres3d(x + 8, y, z, radius=(1:6)/5, col = rainbow(6))
+planes3d(0, 1, 1, 0, col = "white") # y + z = 0
+par3d(zoom = 0.5)
+rglwidget()
+```
+
+- They are actually constructed out of triangles.
+
+## Meshes
+
+Several functions produce and work with "meshes":  R objects
+containing vertices and indexes defining faces.
+
+- `cube3d()`,  `tetrahedron3d()`, etc. 
+- `cylinder3d()`, `extrude3d()`, `turn3d()`, `polygon3d()`
+- `subdivision3d()`, `addNormals()`
+```{r results="hide",webgl=TRUE, echo=2, fig.height=2}
+rgl.close()
+example(cylinder3d)
+par3d(zoom=0.8)
+```
+
+## High level functions
+
+- High level functions in `rgl` are modelled on base graphics:
+`plot3d()`, `persp3d()`.
+- There are also a number of functions to add decorations to the plots:  `axis3d()`, `axes3d()`, `bbox3d()`, `bgplot3d`, `box3d()`,
+`decorate3d()`, `grid3d()`, `mtext3d()`
+```{r echo=2:3}
+rgl.close()
+xyz <- matrix(rnorm(300), ncol = 3)
+plot3d(xyz, main = "Random Normals", type = "s", col = rainbow(100))
+par3d(zoom=0.8)
+rglwidget()
+```
+
+## persp3d() is better than persp()
+
+- In base graphics, `persp(x, y, z)` requires `x` and `y` to be 
+vectors, and `z` to be a matrix.  It is plotted as though `z = f(x,y)`.
+- In `rgl`, any of the three arguments can be matrices.  A parametric
+surface `(x(s,t), y(s,t), z(s,t))` can be plotted:
+```{r cylinder,echo=TRUE, eval=TRUE}
+z <- matrix(seq(0, 1, len=50), 50, 50)
+theta <- t(z)
+r <- 1 + exp( -pmin( (z - theta)^2, 
+		     (z - theta - 1)^2, 
+		     (z - theta + 1)^2 )/0.01 )
+x <- r*cos(theta*2*pi)
+y <- r*sin(theta*2*pi)
+
+persp3d(x, y, z, col="red")
+```
+
+## persp3d() output
+
+```{r echo=FALSE, fig.height=5}
+rglwidget()
+```
+
+# Some details
+
+## Specifying coordinates
+
+- `rgl` uses R's `xyz.coords()` function to interpret the `x`, `y` and
+`z` arguments.  
+- This makes it quite flexible:  `x` can be a
+matrix or list, allowing `y` and `z` to be skipped, etc.
+```{r echo=2}
+rgl.close()
+spheres3d(xyz, col=rainbow(100), radius = 0.3)
+par3d(zoom=0.7)
+rglwidget()
+```
+
+## Object IDs
+
+- Functions that create objects return numerical IDs.  
+- Use these to remove or hide objects (more below).
+```{r echo=-1}
+rgl.close()
+print( plot3d(xyz, main = "Random Normals", type = "s") )
+rgl.ids()
+```
+
+
+## Material properties
+
+- Each vertex (or whole object) has a number of "material properties" that determine how
+it is rendered.  Use `material3d()` to set or query defaults.
+```{r}
+names(material3d())
+```
+
+- Normals and texture coordinates are also vertex properties.
+
+## Normals
+
+- In geometry, the normal to a surface is a vector perpendicular to it. It determines how light is reflected.
+- In `rgl`, normals can be set at each vertex independent of the geometry, and this can be used to fake curved surfaces.
+- These are the same shape, but with different normals:
+```{r echo=FALSE}
+rgl.close()
+surface1 <- subdivision3d(tetrahedron3d(), 3)
+surface2 <- addNormals(surface1)
+shade3d(surface1, col = "red")
+shade3d(translate3d(surface2, 1,0,0), col = "blue")
+par3d(zoom = 0.5)
+rglwidget()
+```
+
+## Textures
+
+- In computer graphics, "textures" are fixed bitmaps that are
+displayed on a 3D surface.  For example,
+<img src="`r system.file("textures/world.png",package="rgl")`" width="50%" align="middle" style="display:block;margin-left:auto;margin-right:auto"/>  
+is displayed using `persp3d(..., texture = ...)`:
+```{r echo=FALSE, fig.height=2}
+rglwidget(globe)
+```
+
+## Transparency
+
+- Specifying a value of `0 < alpha < 1` makes objects partially
+transparent.
+```{r echo=2:3}
+rgl.close()
+spheres3d(xyz, col = rainbow(100), radius = 0.3)
+planes3d(1, 2, 3, 4, alpha = 0.4) # The plane x + 2y + 3z + 4 = 0
+par3d(zoom = 0.7)
+rglwidget()
+```
+
+## Clipping planes
+
+- Clipping planes are planes such that only the parts of objects
+on one side of the plane are displayed.
+```{r echo=2:3}
+rgl.close()
+spheres3d(xyz, col = rainbow(100), radius = 0.3)
+clipplanes3d(1, 2, 3, 4) # Display only x + 2y + 3z + 4 > 0
+par3d(zoom = 0.7)
+rglwidget()
+```
+
+## Subscenes
+
+- `grid` has "viewports".  That name was already taken in `rgl`, so
+we have "subscenes".
+- Subscenes correspond to part of the display, and can inherit 
+various aspects of the parent subscene.
+- Objects exist outside of subscenes, but may be chosen to be
+displayed or not in each subscene, so we can get multiple views 
+of the same object, or views of different objects.
+- Functions `mfrow3d()` and `layout3d()` set up multiple
+subscenes in regular grids.
+
+## Subscenes with shared mouse
+
+```{r echo=-(1:3)}
+rgl.close()
+# from the MASS::fitdistr example
+set.seed(123)
+x <- rgamma(100, shape = 5, rate = 0.1)
+fit <- MASS::fitdistr(x, dgamma, list(shape = 1, rate = 0.1), 
+		      lower = 0.001)
+
+loglik <- Vectorize(function(shape, rate) 
+  sum(dgamma(x, shape = shape, rate = rate, log = TRUE)))
+
+xlim <- fit$estimate[1] + 4*fit$sd[1]*c(-1, 1)
+ylim <- fit$estimate[2] + 4*fit$sd[2]*c(-1, 1)
+zlim <- fit$loglik + c(-qchisq(0.99, 2)/2, 0)
+
+mfrow3d(1, 2, sharedMouse = TRUE)
+persp3d(loglik, xlim = xlim, ylim = ylim, n = 30)
+next3d()
+persp3d(loglik, xlim = xlim, ylim = ylim, zlim = zlim, n = 30)
+```
+
+## Subscene output
+
+```{r echo=FALSE, fig.height = 5}
+rglwidget()
+```
+  
+## Model of Earth
+
+Set up model of Earth.  Use `persp3d()` for the surface, `spheres3d()`
+for inner structure.
+
+```{r echo = FALSE}
+rgl.close()
+```
+```{r setupearth, eval=FALSE}
+```
+
+## Set up overlapping subscenes
+
+```{r setupclipping, echo=1:15, eval=FALSE}
+```
+
+## Show it
+
+```{r echo=FALSE, fig.height=4}
+rglwidget(globe)
+```
+
+# Putting it on the web
+
+## `rmarkdown`
+
+- This talk uses the `rmarkdown` package: source is a mixture of
+R code and Markdown.
+- The `knitr` package runs the R code and inserts it into an
+intermediate copy of the text, then `rmarkdown` runs Pandoc to
+translate it into HTML.
+- You can choose to produce PDF files from Markdown source, but
+the `rgl` inserts require HTML, because PDF currently 
+does not support WebGL.
+
+## `htmlwidgets`
+
+- Since this summer, `rgl` has used `htmlwidgets`.
+- `htmlwidgets` gives a standard framework for Javascript libraries to display
+in `rmarkdown` documents, `Shiny` apps, the RStudio IDE,
+or any browser.
+```{r}
+library(leaflet)
+leaflet() %>% addTiles() %>% setView(-79.3889, 43.6554, zoom = 10)
+```
+
+## `rglwidget`
+
+The WebGL code is mainly in the `rglwidget` package.
+To use it, create an `rgl` plot in the usual way, and call
+`rglwidget()` to insert it into the document.
+
+    ```{r}`r ''`  
+    plot3d(xyz, type = "s", col = "red")  
+    rglwidget()  
+    ```
+Alternatively, use option `webGL = TRUE` in the chunk header:
+
+    ```{r webGL = TRUE}`r ''`  
+    plot3d(xyz, type = "s", col = "red")  
+    ```
+    
+## What's the difference?
+
+- `rglwidget()` needs to print to work. It will display even
+without a document.
+- `webGL = TRUE` needs `knitr`. It works even with `results = "hide"`.
+- `rglwidget()` (currently) needs `library(rglwidget)`.  
+- `webGL = TRUE` needs you to call `setupKnitr()` first.
+- `webGL = TRUE` supports chunk option `rgl.newwindow = TRUE` to open a new `rgl` window.
+- `rglwidget()` works better with some interactive features (see below).
+
+I recommend the `rglwidget()` approach for new documents.
+
+## Interactive features
+
+- Some graphs need more interaction than just rotation.
+```{r sealsetup,echo=FALSE,fig.height=4}
+df   <- read.csv("seal.csv")
+time <- seq_len(nrow(df)) - 1
+xyz  <- cbind(df[,6],df[,7],-df[,3])
+okay <- complete.cases(xyz)
+xyz  <-xyz[okay,]
+time <- time[okay]
+
+lineid <-plot3d(xyz, xlab="Longitude", ylab="Latitude", zlab="Depth",
+		type="l", col = c("black", "black"))["data"]
+aspect3d(5,5,1)
+sphereid <- spheres3d(xyz[1, , drop=FALSE], radius = 3, col = "red")
+show2d(filename="sable.png", z=0, alpha=0.7)
+par3d(zoom = 0.6)
+rglwidget(elementId = "seal")
+```
+```{r playwidget, echo=FALSE}
+rxyz <- round(xyz, 2)
+playwidget("seal", list(ageControl(objids = lineid, births = time, 
+                              ages   = c(0, 0, 1800),
+                              colors = c("gray", "red", "gray")),
+                   ageControl(objids = sphereid, births = 0, 
+                   	      ages = time, vertices = xyz)), 
+                   labels = paste(df[okay,2],-rxyz[,1],"W", 
+                                  rxyz[,2],"N", rxyz[,3]),
+                   start = min(time), stop = max(time), rate = 1000)
+```
+
+## Widgets, controls, setters...
+
+- This is still in flux.  I'll only describe the newer implementation.
+- Several functions act like `rglwidget()` and run Javascript: 
+    - `playwidget()` creates a slider and buttons for animations.
+    - `subsetControl()` selects different subsets of `rgl` objects depending on a value.
+    - `vertexControl()`, `ageControl()` and `propertyControl()` modify
+properties of `rgl` objects (colour, position, etc).
+- The "widgets" are visible, the "controls" are not.  Controls are
+intended to be modified by `playwidget()` or a Shiny input.
+In turn they modify an `rglwidget()`.
+- The previous system used `webGL = TRUE` and "setters"; they are not compatible.
+
+## Putting together the seal plot
+
+```{r sealsetup, eval=FALSE}
+```
+
+## `ageControl()`
+
+- The abstraction in `ageControl()` is that each element of an `rgl` 
+object was created (or born) at a different time.  The slider sets
+the current clock time, so each element has a different age.  You set
+properties based on the age.
+```{r playwidget, eval=FALSE}
+```
+- The `playwidget()` sets the value of each `ageControl()`.
+
+## subsetControl
+
+```{r echo=FALSE, message=FALSE}
+rgl.close()
+load("trisk.RData")
+library(mapmisc)
+df <- as.data.frame(trisk, xy=TRUE)
+x <- matrix(df$x, 23, 40, byrow=TRUE)
+y <- matrix(df$y, 23, 40, byrow=TRUE)
+t <- matrix(seq(1, 0, len=23), 23, 40)
+s <- matrix(seq(0, 1, len=40), 23, 40, byrow=TRUE)
+yrs <- paste0("y", 1990:2013)
+ids <- integer(length(yrs)); r <- c()
+for (i in seq_along(yrs)) {
+  z <- matrix(df[[yrs[i]]], 23, 40, byrow=TRUE)
+  r <- range(c(r, z))
+  ids[i] <- surface3d(x,y,z,  texture="toronto2.png", 
+    texture_s=s, texture_t=t, col="white", specular="black")
+}
+par3d(zoom=0.4); aspect3d(80,46,12)
+rglwidget(elementId = "Toronto")
+```
+```{r}
+playwidget("Toronto", subsetControl(subsets = as.list(ids)),
+           labels = 1990:2013, stop = length(yrs) - 1, rate = 5,
+           components = c("Play", "Slider", "Label"))
+```
+
+## vertexControl
+
+```{r echo=FALSE}
+planeid <- planes3d(0,0,1,0, alpha=0.5, col="white")
+rglwidget(elementId = "Toronto2")
+playwidget("Toronto2", subsetControl(subsets = as.list(ids)),
+           labels = 1990:2013, stop = length(yrs) - 1, rate = 5,
+           components = c("Play", "Slider", "Label"))
+```
+```{r}
+playwidget("Toronto2", vertexControl(values = matrix(r, 2, 6),
+	   vertices = 1:6, attributes = "z", objid = planeid, param = r),
+	   start = r[1], stop = r[2], step = 0.1, precision = 2,
+	   components = c("Play", "Slider", "Label"))
+```				     
+
+## Shiny
+
+- `shiny` is a package for interactive web pages.  R runs
+on a server; the web page sends messages to the server, which
+modifies the displayed material.
+- The `rglwidget()` code works with `shiny`.  The round-trip
+time for the message and response is a little slow.
+- An example is in the `rglwidget` package; I'll show it in tomorrow's talk...
+
+	
+# Conclusion
+
+## What's next?
+
+- I still have a number of things on my to-do list before 
+I'll think of `rgl` and `rglwidget` as finished, but they are 
+definitely working now for web displays.
+- I really appreciate it when people try it out, and make
+suggestions, or ask for features that aren't there.
+- Have fun!
